@@ -93,9 +93,14 @@ export default function App() {
 
   // Register Service Worker and Dynamic PWA Manifest
   useEffect(() => {
+    // Get the base path of the current page, preserving directory subfolder (e.g., for GitHub Pages)
+    const basePath = window.location.pathname.endsWith('/') 
+      ? window.location.pathname 
+      : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.register(`${basePath}sw.js`)
           .then((reg) => console.log('Service Worker registrado con éxito:', reg.scope))
           .catch((err) => console.warn('Service Worker no se pudo registrar:', err));
       });
@@ -108,7 +113,7 @@ export default function App() {
         name: "Semáforo Emocional",
         short_name: "Semáforo",
         description: "Diario terapéutico de registro emocional",
-        start_url: window.location.origin + "/",
+        start_url: window.location.origin + basePath,
         display: "standalone",
         background_color: "#f8fafc",
         theme_color: "#1e293b",
