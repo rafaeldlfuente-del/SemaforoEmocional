@@ -1,0 +1,6 @@
+{
+  "name": "Semáforo Emocional",
+  "description": "Herramienta terapéutica para el registro diario y clasificación de eventos emocionales y conductuales.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
