@@ -2,9 +2,7 @@
   "name": "Semáforo Emocional — Diario Terapéutico",
   "short_name": "Semáforo",
   "description": "Diario terapéutico personal para registrar y procesar tus emociones diarias de forma privada.",
-  "id": "./",
   "start_url": "./",
-  "scope": "./",
   "display": "standalone",
   "background_color": "#FDFCFB",
   "theme_color": "#FDFCFB",
@@ -14,25 +12,13 @@
       "src": "./icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     },
     {
       "src": "./icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "./icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ]
 }
