@@ -31,6 +31,10 @@ import {
   Upload
 } from 'lucide-react';
 
+// Control de Versión de la Aplicación (Modificar al publicar una nueva versión)
+const APP_VERSION = 'v1.4.0';
+const APP_LAST_UPDATE = '08/07/2026';
+
 // Generates PWA icon via Canvas dynamically (avoids external image requirements)
 function generatePWAIcons(): string {
   const canvas = document.createElement('canvas');
@@ -376,11 +380,22 @@ export default function App() {
               JD
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-[#1F2937] tracking-tight">
-                Semáforo Emocional
-              </h1>
-              <p className="text-xs text-[#7D736A]">
-                {new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-lg font-semibold text-[#1F2937] tracking-tight">
+                  Semáforo Emocional
+                </h1>
+                <span 
+                  className="text-[9px] font-mono font-bold text-[#7D736A] bg-[#E5E1DD]/45 px-1.5 py-0.5 rounded border border-[#E5E1DD]/80 select-none cursor-help"
+                  title={`Última actualización: ${APP_LAST_UPDATE}`}
+                >
+                  {APP_VERSION}
+                </span>
+              </div>
+              <p className="text-xs text-[#7D736A] flex items-center gap-1.5">
+                <span>{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                <span className="text-[10px] text-[#9A8F85] select-none" title="Fecha de compilación de esta versión">
+                  • {APP_LAST_UPDATE}
+                </span>
               </p>
             </div>
           </div>
