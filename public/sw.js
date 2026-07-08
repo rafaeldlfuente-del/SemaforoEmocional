@@ -3,12 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-const CACHE_NAME = 'semaforo-emocional-v1';
+const CACHE_NAME = 'semaforo-emocional-v1.4.1';
+
+const PRECACHE_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
+];
 
 // We intercept dynamic requests to cache whatever assets are loaded on-the-fly
 // This network-first, fallback-to-cache strategy keeps the application offline-ready
-self.addEventListener('install', () => {
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => {
+        console.log('Precaching essential offline assets...');
+        return cache.addAll(PRECACHE_ASSETS);
+      })
+      .then(() => self.skipWaiting())
+      .catch((error) => {
+        console.error('Failed to precache offline assets:', error);
+      })
+  );
 });
 
 self.addEventListener('activate', (event) => {
