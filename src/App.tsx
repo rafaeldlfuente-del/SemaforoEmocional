@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 
 // Control de Versión de la Aplicación (Modificar al publicar una nueva versión)
-const APP_VERSION = 'v1.4.1';
+const APP_VERSION = 'v1.4.2';
 const APP_LAST_UPDATE = '08/07/2026';
 
 // Generates PWA icon via Canvas dynamically (avoids external image requirements)

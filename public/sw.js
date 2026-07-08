@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-const CACHE_NAME = 'semaforo-emocional-v1.4.1';
+const CACHE_NAME = 'semaforo-emocional-v1.4.2';
 
 const PRECACHE_ASSETS = [
   './',
@@ -45,7 +45,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests of http/https protocol
+  // Only handle GET requests of http/https protocol
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
@@ -63,7 +63,18 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => {
         // Fallback to cache when offline
-        return caches.match(event.request);
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Critical fix: Return a valid Response object instead of undefined
+          // to prevent TypeError in Chrome's fetch handler.
+          return new Response('Contenido no disponible sin conexión', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+          });
+        });
       })
   );
 });
