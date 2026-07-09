@@ -35,40 +35,6 @@ import {
 const APP_VERSION = 'v1.4.3';
 const APP_LAST_UPDATE = '08/07/2026';
 
-// Generates PWA icon via Canvas dynamically (avoids external image requirements)
-function generatePWAIcons(): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = 192;
-  canvas.height = 192;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    // Elegant dark slate backdrop
-    ctx.fillStyle = '#1e293b';
-    ctx.beginPath();
-    ctx.arc(96, 96, 96, 0, 2 * Math.PI);
-    ctx.fill();
-
-    // Red dot
-    ctx.fillStyle = '#f43f5e';
-    ctx.beginPath();
-    ctx.arc(96, 50, 18, 0, 2 * Math.PI);
-    ctx.fill();
-
-    // Yellow dot
-    ctx.fillStyle = '#fbbf24';
-    ctx.beginPath();
-    ctx.arc(96, 96, 18, 0, 2 * Math.PI);
-    ctx.fill();
-
-    // Green dot
-    ctx.fillStyle = '#10b981';
-    ctx.beginPath();
-    ctx.arc(96, 142, 18, 0, 2 * Math.PI);
-    ctx.fill();
-  }
-  return canvas.toDataURL('image/png');
-}
-
 export default function App() {
   // Lock state (loaded on open)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
@@ -91,7 +57,7 @@ export default function App() {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success'>('idle');
   const [importStatus, setImportStatus] = useState<string>('');
 
-  // Register Service Worker and Dynamic PWA Manifest
+  // Register Service Worker on mount
   useEffect(() => {
     // Get the base path of the current page, preserving directory subfolder (e.g., for GitHub Pages)
     const basePath = window.location.pathname.endsWith('/') 
@@ -104,57 +70,6 @@ export default function App() {
           .then((reg) => console.log('Service Worker registrado con éxito:', reg.scope))
           .catch((err) => console.warn('Service Worker no se pudo registrar:', err));
       });
-    }
-
-    try {
-      const iconDataUrl = generatePWAIcons();
-      
-      const manifest = {
-        name: "Semáforo Emocional",
-        short_name: "Semáforo",
-        description: "Diario terapéutico de registro emocional",
-        start_url: window.location.origin + basePath,
-        display: "standalone",
-        background_color: "#f8fafc",
-        theme_color: "#1e293b",
-        icons: [
-          {
-            src: iconDataUrl,
-            sizes: "192x192",
-            type: "image/png",
-            purpose: "any maskable"
-          },
-          {
-            src: iconDataUrl,
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any maskable"
-          }
-        ]
-      };
-
-      const manifestStr = JSON.stringify(manifest);
-      const blob = new Blob([manifestStr], { type: 'application/json' });
-      const manifestUrl = URL.createObjectURL(blob);
-
-      let linkTag = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
-      if (!linkTag) {
-        linkTag = document.createElement('link');
-        linkTag.rel = 'manifest';
-        document.head.appendChild(linkTag);
-      }
-      linkTag.href = manifestUrl;
-
-      let faviconTag = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
-      if (!faviconTag) {
-        faviconTag = document.createElement('link');
-        faviconTag.rel = 'icon';
-        faviconTag.type = 'image/png';
-        document.head.appendChild(faviconTag);
-      }
-      faviconTag.href = iconDataUrl;
-    } catch (error) {
-      console.error("Error generating dynamic PWA resources:", error);
     }
   }, []);
 
