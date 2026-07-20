@@ -5,7 +5,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrafficLightColor, EmotionalEntry, AppSettings } from './types';
-import { generatePlainTextLog } from './utils';
+import { generatePlainTextLog, formatLongDate, formatTime } from './utils';
+import { jsPDF } from 'jspdf';
+import { motion, AnimatePresence } from 'motion/react';
 
 // Import our modular sub-components
 import PINLock from './components/PINLock';
@@ -28,7 +30,10 @@ import {
   BookOpen, 
   Check, 
   LogOut,
-  Upload
+  Upload,
+  FileText,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 
 // Control de Versión de la Aplicación (Modificar al publicar una nueva versión)
@@ -56,6 +61,21 @@ export default function App() {
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success'>('idle');
   const [importStatus, setImportStatus] = useState<string>('');
+
+  // Toast and PDF Report states
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [pdfRange, setPdfRange] = useState<'all' | 'month' | 'two-weeks' | 'week'>('all');
+  const [patientName, setPatientName] = useState<string>('');
+
+  // Auto-clear toast notification
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Register Service Worker on mount
   useEffect(() => {
@@ -173,10 +193,12 @@ export default function App() {
     navigator.clipboard.writeText(textLog)
       .then(() => {
         setCopyStatus('success');
+        setToast({ message: '¡Registro copiado al portapapeles con éxito!', type: 'success' });
         setTimeout(() => setCopyStatus('idle'), 2500);
       })
       .catch((err) => {
         console.error("Failed to copy text: ", err);
+        setToast({ message: 'Error al copiar el registro al portapapeles.', type: 'error' });
       });
   };
 
@@ -198,6 +220,7 @@ export default function App() {
     
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    setToast({ message: '¡Registro descargado en formato de texto (.txt) con éxito!', type: 'success' });
   };
 
   // Export JSON backup for reinstallation or device change
@@ -224,10 +247,345 @@ export default function App() {
       
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      setToast({ message: '¡Copia de seguridad (.json) exportada con éxito!', type: 'success' });
     } catch (error) {
       console.error("Error exporting backup:", error);
       setImportStatus('Error al exportar la copia de seguridad.');
+      setToast({ message: 'Error al exportar la copia de seguridad.', type: 'error' });
     }
+  };
+
+  // Generate professional therapeutic PDF report using jsPDF
+  const handleGeneratePdf = () => {
+    // 1. Filter entries based on selected range
+    let filteredEntries = [...entries];
+    let rangeText = 'Todos los registros históricos';
+    const now = new Date();
+
+    if (pdfRange === 'month') {
+      const cutoff = new Date();
+      cutoff.setDate(now.getDate() - 30);
+      cutoff.setHours(0, 0, 0, 0);
+      filteredEntries = entries.filter(e => new Date(e.dateTimeISO) >= cutoff);
+      rangeText = 'Último mes (últimos 30 días)';
+    } else if (pdfRange === 'two-weeks') {
+      const cutoff = new Date();
+      cutoff.setDate(now.getDate() - 14);
+      cutoff.setHours(0, 0, 0, 0);
+      filteredEntries = entries.filter(e => new Date(e.dateTimeISO) >= cutoff);
+      rangeText = 'Últimas dos semanas (últimos 14 días)';
+    } else if (pdfRange === 'week') {
+      const cutoff = new Date();
+      cutoff.setDate(now.getDate() - 7);
+      cutoff.setHours(0, 0, 0, 0);
+      filteredEntries = entries.filter(e => new Date(e.dateTimeISO) >= cutoff);
+      rangeText = 'Última semana (últimos 7 días)';
+    }
+
+    if (filteredEntries.length === 0) {
+      setToast({
+        message: 'No hay registros en el período seleccionado para generar el informe.',
+        type: 'error'
+      });
+      return;
+    }
+
+    // Sort chronologically (oldest first for progression analysis)
+    const sortedEntries = [...filteredEntries].sort((a, b) => new Date(a.dateTimeISO).getTime() - new Date(b.dateTimeISO).getTime());
+
+    // Grouping by day
+    const groups: { [key: string]: EmotionalEntry[] } = {};
+    sortedEntries.forEach(entry => {
+      const dateOnly = new Date(entry.dateTimeISO).toDateString();
+      if (!groups[dateOnly]) {
+        groups[dateOnly] = [];
+      }
+      groups[dateOnly].push(entry);
+    });
+
+    const sortedDays = Object.keys(groups).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+    // Statistics calculations
+    const totalCount = sortedEntries.length;
+    const greenCount = sortedEntries.filter(e => e.color === 'green').length;
+    const yellowCount = sortedEntries.filter(e => e.color === 'yellow').length;
+    const redCount = sortedEntries.filter(e => e.color === 'red').length;
+
+    const greenPct = totalCount > 0 ? Math.round((greenCount / totalCount) * 100) : 0;
+    const yellowPct = totalCount > 0 ? Math.round((yellowCount / totalCount) * 100) : 0;
+    const redPct = totalCount > 0 ? Math.round((redCount / totalCount) * 100) : 0;
+
+    // Initialize jsPDF
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    let y = 20;
+    const leftMargin = 20;
+    const rightMargin = 20;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - leftMargin - rightMargin;
+
+    let pageNum = 1;
+
+    // Helper to draw header/footer decoration
+    const drawFooter = (docInstance: typeof doc, pNum: number) => {
+      docInstance.setFont('Helvetica', 'normal');
+      docInstance.setFontSize(8);
+      docInstance.setTextColor(154, 143, 133); // #9A8F85
+      docInstance.text(
+        `Informe Terapéutico Personalizado — Semáforo Emocional — Página ${pNum}`,
+        pageWidth / 2,
+        pageHeight - 15,
+        { align: 'center' }
+      );
+    };
+
+    const addPage = () => {
+      drawFooter(doc, pageNum);
+      doc.addPage();
+      pageNum++;
+      y = 20;
+    };
+
+    // --- Header ---
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(31, 41, 55); // #1F2937 (Slate 800)
+    doc.text('INFORME TERAPÉUTICO EMOCIONAL', leftMargin, y);
+    y += 4;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(125, 115, 106); // #7D736A
+    doc.text('Auto-observación diaria y registro de estados de ánimo', leftMargin, y);
+    y += 5;
+
+    // Decorative line
+    doc.setDrawColor(229, 225, 221); // #E5E1DD
+    doc.setLineWidth(0.5);
+    doc.line(leftMargin, y, pageWidth - rightMargin, y);
+    y += 10;
+
+    // --- Patient and period info ---
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(74, 85, 104); // #4A5568
+
+    doc.text('Paciente:', leftMargin, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(31, 41, 55);
+    doc.text(patientName.trim() || 'Auto-observación anónima', leftMargin + 38, y);
+    y += 6;
+
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(74, 85, 104);
+    doc.text('Período del informe:', leftMargin, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(31, 41, 55);
+    doc.text(rangeText, leftMargin + 38, y);
+    y += 6;
+
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(74, 85, 104);
+    doc.text('Fecha de emisión:', leftMargin, y);
+    doc.setFont('Helvetica', 'normal');
+    doc.setTextColor(31, 41, 55);
+    const dateFormatted = new Date().toLocaleDateString('es-ES', { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    doc.text(dateFormatted, leftMargin + 38, y);
+    y += 12;
+
+    // --- Statistics and distribution ---
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(31, 41, 55);
+    doc.text('Resumen de Estados Emocionales', leftMargin, y);
+    y += 6;
+
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(74, 85, 104);
+    doc.text(`Total de sucesos registrados en este período: `, leftMargin, y);
+    doc.setFont('Helvetica', 'bold');
+    doc.setTextColor(31, 41, 55);
+    doc.text(`${totalCount}`, leftMargin + 65, y);
+    y += 8;
+
+    // Stats block cards (Green, Yellow, Red)
+    const statBoxY = y;
+    const boxHeight = 14;
+    const boxWidth = contentWidth / 3;
+
+    // Green Card
+    doc.setFillColor(232, 245, 233); // Light soft green #E8F5E9
+    doc.rect(leftMargin, statBoxY, boxWidth - 2, boxHeight, 'F');
+    // Green dot
+    doc.setFillColor(16, 185, 129); // #10B981
+    doc.ellipse(leftMargin + 6, statBoxY + boxHeight / 2, 2, 2, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(46, 125, 50); // Deep green #2E7D32
+    doc.text(`Verde (Positivo)`, leftMargin + 11, statBoxY + boxHeight / 2 - 1.5);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text(`${greenCount} reg. (${greenPct}%)`, leftMargin + 11, statBoxY + boxHeight / 2 + 3);
+
+    // Yellow Card
+    doc.setFillColor(254, 243, 199); // Light soft yellow #FEF3C7
+    doc.rect(leftMargin + boxWidth, statBoxY, boxWidth - 2, boxHeight, 'F');
+    // Yellow dot
+    doc.setFillColor(251, 191, 36); // #FBBF24
+    doc.ellipse(leftMargin + boxWidth + 6, statBoxY + boxHeight / 2, 2, 2, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(180, 83, 9); // Deep yellow #B45309
+    doc.text(`Amarillo (Alerta)`, leftMargin + boxWidth + 11, statBoxY + boxHeight / 2 - 1.5);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text(`${yellowCount} reg. (${yellowPct}%)`, leftMargin + boxWidth + 11, statBoxY + boxHeight / 2 + 3);
+
+    // Red Card
+    doc.setFillColor(254, 226, 226); // Light soft red #FEE2E2
+    doc.rect(leftMargin + boxWidth * 2, statBoxY, boxWidth - 2, boxHeight, 'F');
+    // Red dot
+    doc.setFillColor(244, 63, 94); // #F43F5E
+    doc.ellipse(leftMargin + boxWidth * 2 + 6, statBoxY + boxHeight / 2, 2, 2, 'F');
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(185, 28, 28); // Deep red #B91C1C
+    doc.text(`Rojo (Crítico)`, leftMargin + boxWidth * 2 + 11, statBoxY + boxHeight / 2 - 1.5);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.text(`${redCount} reg. (${redPct}%)`, leftMargin + boxWidth * 2 + 11, statBoxY + boxHeight / 2 + 3);
+
+    y += boxHeight + 12;
+
+    // --- Detailed Entries section ---
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(31, 41, 55);
+    doc.text('Detalle del Registro Diario', leftMargin, y);
+    y += 5;
+
+    // Thin line
+    doc.setDrawColor(240, 237, 234); // #F0EDEA
+    doc.setLineWidth(0.3);
+    doc.line(leftMargin, y, pageWidth - rightMargin, y);
+    y += 8;
+
+    // Grouped entries list
+    sortedDays.forEach(dayStr => {
+      const dayEntries = groups[dayStr];
+      
+      const firstEntryDate = dayEntries[0].dateTimeISO;
+      const dayHeader = formatLongDate(firstEntryDate);
+
+      // Check height needed for day header
+      if (y + 12 > pageHeight - 25) {
+        addPage();
+      }
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(31, 41, 55);
+      doc.text(dayHeader, leftMargin, y);
+      y += 6;
+
+      dayEntries.forEach(entry => {
+        const timeStr = formatTime(entry.dateTimeISO);
+        
+        // Multi-line description wrapping
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(9.5);
+        const textWidth = contentWidth - 40; // 40mm for spacing, bullet, time, label
+        const lines = doc.splitTextToSize(entry.description, textWidth);
+        const rowHeight = lines.length * 4.5 + 4; // approximate height
+
+        // If page break is needed
+        if (y + rowHeight > pageHeight - 25) {
+          addPage();
+          
+          // Re-draw day header on new page with (continuación) label
+          doc.setFont('Helvetica', 'bold');
+          doc.setFontSize(11);
+          doc.setTextColor(31, 41, 55);
+          doc.text(`${dayHeader} (continuación)`, leftMargin, y);
+          y += 6;
+        }
+
+        // Set bullet color based on entry color
+        let colorName = '';
+        let r = 0, g = 0, b = 0;
+        let textR = 0, textG = 0, textB = 0;
+        
+        if (entry.color === 'green') {
+          colorName = 'Verde';
+          r = 16; g = 185; b = 129; // #10B981
+          textR = 46; textG = 125; textB = 50; // #2E7D32
+        } else if (entry.color === 'yellow') {
+          colorName = 'Amarillo';
+          r = 251; g = 191; b = 36; // #FBBF24
+          textR = 180; textG = 83; textB = 9; // #B45309
+        } else {
+          colorName = 'Rojo';
+          r = 244; g = 63; b = 94; // #F43F5E
+          textR = 185; textG = 28; textB = 28; // #B91C1C
+        }
+
+        // 1. Bullet circle
+        doc.setFillColor(r, g, b);
+        doc.ellipse(leftMargin + 3, y + 1.2, 1.5, 1.5, 'F');
+
+        // 2. Time string
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(110, 120, 135); // Slate 500
+        doc.text(timeStr, leftMargin + 8, y + 2);
+
+        // 3. Color category badge
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(textR, textG, textB);
+        doc.text(`[${colorName}]`, leftMargin + 20, y + 2);
+
+        // 4. Description body text
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(51, 65, 85); // Slate 700
+
+        let textY = y + 2;
+        lines.forEach((lineText: string) => {
+          doc.text(lineText, leftMargin + 38, textY);
+          textY += 4.5;
+        });
+
+        y = textY + 2; // Advance cursor
+      });
+
+      y += 4; // gap between days
+    });
+
+    // Draw footer on last page
+    drawFooter(doc, pageNum);
+
+    // Save/Download PDF
+    const filenameSuffix = now.toISOString().slice(0, 10);
+    const pdfFilename = `informe_terapeutico_${filenameSuffix}.pdf`;
+    doc.save(pdfFilename);
+
+    setToast({
+      message: '¡Informe PDF terapéutico creado con éxito!',
+      type: 'success'
+    });
   };
 
   // Import JSON backup and merge entries to protect current state
@@ -450,6 +808,98 @@ export default function App() {
             </div>
           </div>
 
+          {/* PDF Report Generation section */}
+          <div className="mt-6 pt-5 border-t border-[#F0EDEA]">
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#9A8F85] mb-2 flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5 text-[#7D736A]" />
+              Crear Informe Completo (PDF)
+            </h3>
+            <p className="text-xs text-[#7D736A] leading-relaxed mb-4">
+              Genera un documento PDF estructurado y listo para presentar ante un profesional de la psicología. Incluye análisis estadístico, porcentajes y un desglose detallado de tus sucesos agrupados por día.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-[#F9F8F6] p-4 rounded-xl border border-[#F0EDEA]">
+              {/* Patient Name field */}
+              <div className="space-y-1.5">
+                <label htmlFor="patientNameInput" className="text-[10px] font-bold text-[#9A8F85] uppercase tracking-wider flex items-center gap-1">
+                  Nombre del Paciente (Opcional)
+                </label>
+                <input
+                  id="patientNameInput"
+                  type="text"
+                  placeholder="Ej. Juan Pérez (o dejar vacío)"
+                  value={patientName}
+                  onChange={(e) => setPatientName(e.target.value)}
+                  className="w-full text-xs bg-white rounded-xl border border-[#E5E1DD] px-3.5 py-2.5 text-[#333333] outline-none focus:ring-2 focus:ring-[#F0EDEA] focus:border-[#7D736A] transition-all"
+                />
+              </div>
+
+              {/* Range Selector */}
+              <div className="space-y-1.5 flex flex-col justify-between">
+                <label className="text-[10px] font-bold text-[#9A8F85] uppercase tracking-wider">
+                  Rango del Informe
+                </label>
+                <div className="grid grid-cols-4 gap-1.5 bg-[#E5E1DD]/30 p-1 rounded-xl border border-[#E5E1DD]/60">
+                  <button
+                    type="button"
+                    onClick={() => setPdfRange('all')}
+                    className={`py-2 text-[10px] font-bold rounded-lg cursor-pointer transition-all ${
+                      pdfRange === 'all'
+                        ? 'bg-white text-[#1F2937] shadow-xs'
+                        : 'text-[#7D736A] hover:bg-white/40'
+                    }`}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfRange('month')}
+                    className={`py-2 text-[10px] font-bold rounded-lg cursor-pointer transition-all ${
+                      pdfRange === 'month'
+                        ? 'bg-white text-[#1F2937] shadow-xs'
+                        : 'text-[#7D736A] hover:bg-white/40'
+                    }`}
+                  >
+                    1 Mes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfRange('two-weeks')}
+                    className={`py-2 text-[10px] font-bold rounded-lg cursor-pointer transition-all ${
+                      pdfRange === 'two-weeks'
+                        ? 'bg-white text-[#1F2937] shadow-xs'
+                        : 'text-[#7D736A] hover:bg-white/40'
+                    }`}
+                  >
+                    2 Sem.
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPdfRange('week')}
+                    className={`py-2 text-[10px] font-bold rounded-lg cursor-pointer transition-all ${
+                      pdfRange === 'week'
+                        ? 'bg-white text-[#1F2937] shadow-xs'
+                        : 'text-[#7D736A] hover:bg-white/40'
+                    }`}
+                  >
+                    1 Sem.
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={handleGeneratePdf}
+                className="w-full sm:w-auto px-5 py-2.5 bg-[#7D736A] hover:bg-[#6c6258] text-white text-xs font-bold uppercase tracking-wide rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs active:scale-98"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Crear informe completo (PDF)</span>
+              </button>
+            </div>
+          </div>
+
           {/* Backup / Restore section matching Clean Minimalism exactly */}
           <div className="mt-6 pt-5 border-t border-[#F0EDEA]">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#9A8F85] mb-2 flex items-center gap-1.5">
@@ -571,6 +1021,29 @@ export default function App() {
           onSave={handleSaveEditedEntry}
         />
       )}
+
+      {/* Toast Notifications */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3.5 rounded-2xl border bg-white shadow-lg text-xs font-semibold max-w-sm"
+            style={{
+              borderColor: toast.type === 'success' ? '#D1EAD0' : '#FEE2E2',
+              color: toast.type === 'success' ? '#2E7D32' : '#C62828',
+            }}
+          >
+            {toast.type === 'success' ? (
+              <CheckCircle className="w-5 h-5 shrink-0 text-[#2E7D32]" />
+            ) : (
+              <AlertCircle className="w-5 h-5 shrink-0 text-[#C62828]" />
+            )}
+            <span className="leading-relaxed">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
